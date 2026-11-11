@@ -4,6 +4,24 @@
 
 /* ── Analyze form: loading spinner ───────────────────────────────────────── */
 (function () {
+  const toggle = document.querySelector('.nav-toggle');
+  const navigation = document.getElementById('primary-navigation');
+  if (!toggle || !navigation) return;
+  toggle.addEventListener('click', function () {
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', String(!expanded));
+    navigation.classList.toggle('is-open', !expanded);
+  });
+  navigation.querySelectorAll('a').forEach(function (link) {
+    link.addEventListener('click', function () {
+      toggle.setAttribute('aria-expanded', 'false');
+      navigation.classList.remove('is-open');
+    });
+  });
+})();
+
+/* ── Analyze form: loading spinner ───────────────────────────────────────── */
+(function () {
   const form = document.getElementById('analyze-form');
   const btn  = document.getElementById('analyze-btn');
   if (form && btn) {

@@ -23,7 +23,7 @@
 
   <!-- ── Left: Input form ────────────────────────────────────────────── -->
   <div>
-    <form id="analyze-form" action="{{ url_for('analyze') }}" method="POST">
+    <form id="analyze-form" class="analysis-form" action="{{ url_for('analyze') }}" method="POST">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
       <!-- Load from dataset banner -->
@@ -37,12 +37,12 @@
       </div>
       {% endif %}
 
-      <div class="card">
+      <div class="card form-card">
         <div class="card-header">
           <div class="card-icon cyan">🔍</div>
           <div>
             <div class="card-title">New Troubleshooting Case</div>
-            <div class="card-subtitle">Fill in all fields for the best diagnosis quality</div>
+            <div class="card-subtitle">Give the system enough context to reason with confidence</div>
           </div>
         </div>
         <div class="card-body">
@@ -50,6 +50,7 @@
           <!-- Issue Category -->
           <div class="form-group">
             <label class="form-label" for="category">Issue Category <span>*</span></label>
+            <div class="form-hint form-hint-top">Select the network domain that best matches the incident.</div>
             <select class="form-control" id="category" name="category" required>
               <option value="">— Select category —</option>
               {% for cat in categories %}
@@ -90,7 +91,7 @@
             <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:var(--text-secondary);padding:0.5rem 0;">
               🔧 Optional: IP Details for Gateway Rule Checker
             </summary>
-            <div style="padding-top:1rem;display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;">
+            <div class="ip-details-grid" style="padding-top:1rem;display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;">
               <div class="form-group mb-0">
                 <label class="form-label" for="pc_ip">PC IP Address</label>
                 <input class="form-control" id="pc_ip" name="pc_ip" placeholder="192.168.10.25"/>

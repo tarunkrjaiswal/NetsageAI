@@ -16,9 +16,13 @@
   <div class="nav-inner">
     <a href="{{ url_for('index') }}" class="nav-logo">
       <div class="nav-logo-icon">⚡</div>
-      <span class="nav-logo-text">Net<span>Sage</span> AI</span>
+      <span class="nav-logo-text">Net<span>Sage</span> <b>AI</b><small>Network intelligence</small></span>
     </a>
-    <ul class="nav-links">
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation">
+      <span class="sr-only">Toggle navigation</span>
+      <span></span><span></span><span></span>
+    </button>
+    <ul class="nav-links" id="primary-navigation">
       <li><a href="{{ url_for('index') }}"    id="nav-analyze"   class="{{ 'active' if request.endpoint == 'index' }}">🔍 Analyze</a></li>
       <li><a href="{{ url_for('cases_page') }}" id="nav-cases"   class="{{ 'active' if request.endpoint == 'cases_page' }}">📋 Cases</a></li>
       <li><a href="{{ url_for('history') }}"  id="nav-history"   class="{{ 'active' if request.endpoint == 'history' }}">🕒 History</a></li>
