@@ -148,6 +148,52 @@ On Linux, the production WSGI server can also be started directly:
 gunicorn --bind 0.0.0.0:5000 --workers 1 --threads 4 --timeout 60 wsgi:app
 ```
 
+### Environment variables
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `SECRET_KEY` | Production | Random Flask session/signing key; never commit it |
+| `DATABASE_URL` | Production PostgreSQL | Supabase Session Pooler PostgreSQL URI; URL-encode special password characters |
+| `SQLITE_PATH` | Local only | SQLite file path when `DATABASE_URL` is empty |
+| `AI_PROVIDER` | No | `gemini` (default) or `openai` |
+| `GEMINI_API_KEY` / `OPENAI_API_KEY` | Live AI | Provider credential; use only one provider unless switching |
+| `GEMINI_MODEL` / `OPENAI_MODEL` | No | Provider model names |
+| `MOCK_AI` | No | `true` for offline development and CI |
+| `FLASK_DEBUG` | No | Keep `false` in production |
+| `PORT` | No | Render/container listening port |
+| `MAX_CONTENT_LENGTH` | No | Maximum HTTP request size in bytes (default 1 MiB) |
+| `EXPOSE_DIAGNOSIS_INPUTS` | No | Keep `false` publicly; opt in only when raw submitted inputs may be displayed |
+| `PG_POOL_MIN` / `PG_POOL_MAX` | No | PostgreSQL connection pool bounds (defaults `1` / `4`) |
+| `TRUSTED_HOSTS` | No | Optional comma-separated Flask trusted host names |
+
+The backend connects directly to PostgreSQL with `psycopg2`; Supabase's browser Data API
+and service-role key are not required. The adapter enables TLS, a 10-second connection
+timeout, and a small thread-safe pool suitable for a single Render instance.
+
+### Migrating an existing SQLite database
+
+The application does not delete or reset an existing database. For a migration, first
+copy and back up the SQLite file, create a separate Supabase project/database for a dry
+run, and apply `supabase/migrations/20261111100000_initial_schema.sql`. Use a reviewed
+SQLite-to-PostgreSQL tool such as `pgloader` against the dry-run database, then verify
+row counts and sample records for `cases`, `diagnoses`, and `reviews` (including foreign
+keys) before repeating against production. Keep the original SQLite backup until the
+counts and application smoke tests match. If only the built-in 32 cases are needed,
+the normal application startup seeds them idempotently and no data migration is needed.
+
+### Troubleshooting deployment
+
+- **`SECRET_KEY must be set`**: set a long random `SECRET_KEY` and keep `FLASK_DEBUG=false`.
+- **PostgreSQL connection timeout**: use the Supabase Session Pooler URI, URL-encode the
+  password, and confirm the Render service can reach the database.
+- **Health check reports `database: unavailable`**: inspect Render logs for the database
+  error; `/api/health` intentionally returns HTTP 503 rather than hiding the failure.
+- **AI calls fail**: verify the selected provider key/model, or temporarily set
+  `MOCK_AI=true` to validate the deployment without external credentials.
+- **SQLite is read-only in a container**: use a writable mounted volume for local Docker
+  development; hosted Render deployments should use PostgreSQL because the filesystem is
+  ephemeral.
+
 ### API
 The JSON API is available while the Flask app is running:
 
@@ -169,6 +215,23 @@ The API also provides `GET /api/diagnoses/<id>` and
 `/api/cases` endpoint deliberately omits `expected_fault` so the dataset ground truth
 is not exposed to visitors before they attempt a diagnosis. Browser form submissions use session-bound CSRF tokens. Diagnosis and review writes
 are rate-limited per client IP. The limiter is process-local; use shared Redis before scaling.
+
+### GitHub preparation
+
+Review the final diff and tests locally, then use:
+
+```bash
+git status --short
+git diff --check
+python -m compileall .
+python -m pytest -q
+git add .
+git commit -m "Prepare NetSage AI for deployment"
+git push origin main
+```
+
+Do not add `.env`, database files, logs, or provider credentials. Rotate any credential
+that was ever committed before making the repository public.
 
 ---
 

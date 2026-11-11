@@ -61,6 +61,49 @@ def test_health_api():
     assert response.json["status"] == "ok"
 
 
+def test_seeded_dataset_has_all_cases_and_categories():
+    cases = app_module.db.get_all_cases()
+    assert len(cases) == 32
+    assert {case["category"] for case in cases} == {
+        "VLAN", "Routing", "DHCP", "DNS",
+        "Gateway", "ACL", "NAT", "Wireless",
+    }
+
+
+def test_analyze_rejects_oversized_form_field():
+    client = app_module.app.test_client()
+    page = client.get("/").get_data(as_text=True)
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+    response = client.post(
+        "/analyze",
+        data={"csrf_token": token, "symptom": "x" * 100_001},
+    )
+    assert response.status_code == 413
+
+
+def test_diagnosis_page_hides_submitted_inputs_by_default(monkeypatch):
+    monkeypatch.setattr(app_module.config, "EXPOSE_DIAGNOSIS_INPUTS", False)
+    monkeypatch.setattr(app_module.db, "get_diagnosis", lambda diag_id: {
+        "id": diag_id,
+        "symptom": "private symptom",
+        "topology": "private topology",
+        "show_output": "private command output",
+        "evidence": [],
+        "fix_steps": [],
+        "rule_results": [],
+        "confidence": "Low",
+        "ai_conflict": False,
+    })
+    monkeypatch.setattr(app_module.db, "get_review_for_diagnosis", lambda diag_id: None)
+
+    response = app_module.app.test_client().get("/diagnosis/1")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "private topology" not in body
+    assert "private command output" not in body
+
+
 def test_diagnose_api_validates_and_returns_structured_result(monkeypatch):
     diagnosis = {
         "root_cause": "Trunk failure",

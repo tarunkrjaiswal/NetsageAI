@@ -154,6 +154,7 @@
     </div>
 
     <!-- Original Input Card -->
+    {% if expose_diagnosis_inputs %}
     <div class="card">
       <div class="card-header">
         <div class="card-icon amber">📄</div>
@@ -179,6 +180,7 @@
         </div>
       </div>
     </div>
+    {% endif %}
 
     <!-- Verification card (shown after review) -->
     {% if review and (review.verified_before or review.verified_after) %}

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sqlite3
+from threading import Lock
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ DB_PATH = Path(os.getenv("SQLITE_PATH", BASE_DIR / "database" / "netsage.db"))
 SCHEMA = BASE_DIR / "database" / "schema.sql"
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 _USE_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
+_PG_POOL = None
+_PG_POOL_LOCK = Lock()
 
 
 def _pg_url() -> str:
@@ -21,13 +24,17 @@ def _pg_url() -> str:
         url = "postgresql://" + url[len("postgres://"):]
     if "sslmode=" not in url:
         url += ("&" if "?" in url else "?") + "sslmode=require"
+    if "connect_timeout=" not in url:
+        url += ("&" if "?" in url else "?") + "connect_timeout=10"
     return url
 
 
 class _PostgresConnection:
     """Small DB-API wrapper keeping the existing helper API portable."""
-    def __init__(self, raw):
+    def __init__(self, raw, pool):
         self.raw = raw
+        self.pool = pool
+        self._closed = False
 
     def execute(self, sql: str, params: Any = None):
         from psycopg2.extras import DictCursor
@@ -53,7 +60,10 @@ class _PostgresConnection:
         self.raw.commit()
 
     def close(self):
-        self.raw.close()
+        if not self._closed:
+            self.raw.rollback()
+            self.pool.putconn(self.raw)
+            self._closed = True
 
     def __enter__(self):
         return self
@@ -63,16 +73,30 @@ class _PostgresConnection:
             self.raw.rollback()
         else:
             self.raw.commit()
-        self.raw.close()
+        self.close()
 
 
 def get_connection():
     if _USE_POSTGRES:
         try:
-            import psycopg2
+            from psycopg2.pool import ThreadedConnectionPool
         except ImportError as exc:
             raise RuntimeError("PostgreSQL support requires psycopg2-binary. Install requirements.txt.") from exc
-        return _PostgresConnection(psycopg2.connect(_pg_url()))
+        global _PG_POOL
+        if _PG_POOL is None:
+            with _PG_POOL_LOCK:
+                if _PG_POOL is None:
+                    min_connections = max(1, int(os.getenv("PG_POOL_MIN", "1")))
+                    max_connections = max(
+                        min_connections,
+                        int(os.getenv("PG_POOL_MAX", "4")),
+                    )
+                    _PG_POOL = ThreadedConnectionPool(
+                        min_connections,
+                        max_connections,
+                        dsn=_pg_url(),
+                    )
+        return _PostgresConnection(_PG_POOL.getconn(), _PG_POOL)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH), timeout=15)
     conn.row_factory = sqlite3.Row
@@ -94,8 +118,12 @@ def _schema_postgres() -> str:
       symptom TEXT NOT NULL, topology TEXT, show_output TEXT, root_cause TEXT,
       osi_layer TEXT, confidence TEXT CHECK (confidence IN ('Low','Medium','High')),
       evidence TEXT, next_command TEXT, fix_steps TEXT, rule_results TEXT,
-      ai_conflict INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ai_conflict INTEGER DEFAULT 0, seed_key TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE diagnoses ADD COLUMN IF NOT EXISTS seed_key TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_diagnoses_seed_key
+      ON diagnoses(seed_key) WHERE seed_key IS NOT NULL;
     CREATE TABLE IF NOT EXISTS reviews (
       id BIGSERIAL PRIMARY KEY,
       diagnosis_id BIGINT NOT NULL REFERENCES diagnoses(id) ON DELETE CASCADE,
@@ -124,16 +152,30 @@ def init_db():
         else:
             with open(SCHEMA, encoding="utf-8") as f:
                 conn.executescript(f.read())
+            columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(diagnoses)")
+            }
+            if "seed_key" not in columns:
+                conn.execute("ALTER TABLE diagnoses ADD COLUMN seed_key TEXT")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_diagnoses_seed_key "
+                "ON diagnoses(seed_key)"
+            )
         conn.commit()
     finally:
         conn.close()
 
 
-def _insert_id(sql: str, params: tuple) -> int:
+def _insert_id(sql: str, params: tuple, conn=None) -> int:
     if _USE_POSTGRES:
         sql = sql.rstrip().rstrip(";") + " RETURNING id"
-    with get_connection() as conn:
+    if conn is not None:
         cur = conn.execute(sql, params)
+        if _USE_POSTGRES:
+            return int(cur.fetchone()["id"])
+        return int(cur.lastrowid)
+    with get_connection() as connection:
+        cur = connection.execute(sql, params)
         if _USE_POSTGRES:
             return int(cur.fetchone()["id"])
         return int(cur.lastrowid)
@@ -176,6 +218,46 @@ def insert_diagnosis(d: dict) -> int:
     return _insert_id(sql, params)
 
 
+def insert_seeded_diagnosis(d: dict, seed_key: str, conn) -> int | None:
+    """Insert a built-in diagnosis once, using the caller's transaction."""
+    conn.execute(
+        """UPDATE diagnoses SET seed_key=?
+           WHERE seed_key IS NULL AND case_ref=? AND category=? AND symptom=?
+             AND topology=? AND show_output=? AND root_cause=?""",
+        (seed_key, d.get("case_ref"), d.get("category"), d["symptom"],
+         d.get("topology"), d.get("show_output"), d.get("root_cause")),
+    )
+    existing = conn.execute(
+        "SELECT id FROM diagnoses WHERE seed_key=?",
+        (seed_key,),
+    ).fetchone()
+    if existing:
+        reviewed = conn.execute(
+            "SELECT 1 FROM reviews WHERE diagnosis_id=?",
+            (existing["id"],),
+        ).fetchone()
+        return None if reviewed else int(existing["id"])
+
+    sql = """INSERT INTO diagnoses
+      (case_ref, category, symptom, topology, show_output, root_cause, osi_layer,
+       confidence, evidence, next_command, fix_steps, rule_results, ai_conflict, seed_key)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+    params = (d.get("case_ref"), d.get("category"), d["symptom"], d.get("topology"),
+      d.get("show_output"), d.get("root_cause"), d.get("osi_layer"), d.get("confidence"),
+      json.dumps(d.get("evidence", [])), d.get("next_command"),
+      json.dumps(d.get("fix_steps", [])), json.dumps(d.get("rule_results", [])),
+      int(bool(d.get("ai_conflict", False))), seed_key)
+    if _USE_POSTGRES:
+        sql += " ON CONFLICT (seed_key) DO NOTHING RETURNING id"
+    else:
+        sql = sql.replace("INSERT INTO", "INSERT OR IGNORE INTO")
+    cur = conn.execute(sql, params)
+    if _USE_POSTGRES:
+        row = cur.fetchone()
+        return int(row["id"]) if row else None
+    return int(cur.lastrowid) if cur.rowcount else None
+
+
 def _decode_diagnosis(row) -> dict | None:
     if not row:
         return None
@@ -201,14 +283,14 @@ def get_all_diagnoses() -> list[dict]:
 
 # Reviews
 
-def insert_review(r: dict) -> int:
+def insert_review(r: dict, conn=None) -> int:
     sql = """INSERT INTO reviews
       (diagnosis_id, decision, human_root_cause, human_correction, reason,
        verified_before, fix_applied, verified_after) VALUES (?,?,?,?,?,?,?,?)"""
     params = (r["diagnosis_id"], r["decision"], r.get("human_root_cause"),
       r.get("human_correction"), r.get("reason"), r.get("verified_before"),
       r.get("fix_applied"), r.get("verified_after"))
-    return _insert_id(sql, params)
+    return _insert_id(sql, params, conn)
 
 
 def get_review_for_diagnosis(diag_id: int) -> dict | None:

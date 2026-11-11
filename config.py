@@ -31,6 +31,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "")
 DEBUG      = os.getenv("FLASK_DEBUG", "true").lower() in ("true", "1")
 PORT       = int(os.getenv("PORT", 5000))
 MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", 1_048_576))
+EXPOSE_DIAGNOSIS_INPUTS = os.getenv("EXPOSE_DIAGNOSIS_INPUTS", "false").lower() in ("true", "1", "yes")
 
 if not SECRET_KEY:
     if DEBUG:

@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS diagnoses (
     fix_steps       TEXT,                       -- JSON array as text
     rule_results    TEXT,                       -- JSON array as text
     ai_conflict     INTEGER DEFAULT 0,          -- 1 if AI vs Rule checker disagree
+    seed_key            TEXT,                      -- NULL for user-created diagnoses
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -247,9 +247,13 @@ def _seed_responsible_ai():
 
     for s in seeds:
         review = s.pop("review")
-        diag_id = db.insert_diagnosis(s)
-        review["diagnosis_id"] = diag_id
-        db.insert_review(review)
+        seed_key = f"responsible-ai:{s['case_ref']}"
+        with db.get_connection() as conn:
+            diag_id = db.insert_seeded_diagnosis(s, seed_key, conn)
+            if diag_id is None:
+                continue
+            review["diagnosis_id"] = diag_id
+            db.insert_review(review, conn)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -264,11 +268,11 @@ def index():
 @app.route("/analyze", methods=["POST"])
 @_rate_limit("8 per minute")
 def analyze():
-    symptom     = request.form.get("symptom", "").strip()
-    topology    = request.form.get("topology", "").strip()
-    show_output = request.form.get("show_output", "").strip()
-    category    = request.form.get("category", "General").strip()
-    case_ref    = request.form.get("case_ref", "").strip() or None
+    symptom     = _form_text("symptom", 100_000)
+    topology    = _form_text("topology", 100_000)
+    show_output = _form_text("show_output", 100_000)
+    category    = _form_text("category", 64) or "General"
+    case_ref    = _form_text("case_ref", 64) or None
 
     if not symptom:
         flash("Please enter a symptom description.", "error")
@@ -276,9 +280,9 @@ def analyze():
 
     # ── Python Rule Checker ──────────────────────────────────────────────
     extra = {
-        "pc_ip":   request.form.get("pc_ip", "").strip(),
-        "pc_mask": request.form.get("pc_mask", "").strip(),
-        "gateway": request.form.get("gateway", "").strip(),
+        "pc_ip":   _form_text("pc_ip", 64),
+        "pc_mask": _form_text("pc_mask", 64),
+        "gateway": _form_text("gateway", 64),
     }
     rule_results = run_all_checks(symptom, show_output, category, extra)
 
@@ -310,7 +314,12 @@ def diagnosis_page(diag_id: int):
     if not diag:
         abort(404)
     review = db.get_review_for_diagnosis(diag_id)
-    return render_template("diagnosis.html", diag=diag, review=review)
+    return render_template(
+        "diagnosis.html",
+        diag=diag,
+        review=review,
+        expose_diagnosis_inputs=config.EXPOSE_DIAGNOSIS_INPUTS,
+    )
 
 
 @app.route("/review/<int:diag_id>", methods=["POST"])
@@ -325,13 +334,13 @@ def submit_review(diag_id: int):
         flash("This diagnosis has already been reviewed.", "warning")
         return redirect(url_for("diagnosis_page", diag_id=diag_id))
 
-    decision         = request.form.get("decision", "").strip().lower()
-    human_root_cause = request.form.get("human_root_cause", "").strip()
-    human_correction = request.form.get("human_correction", "").strip()
-    reason           = request.form.get("reason", "").strip()
-    fix_applied      = request.form.get("fix_applied", "").strip()
-    verified_before  = request.form.get("verified_before", "").strip() or None
-    verified_after   = request.form.get("verified_after", "").strip() or None
+    decision         = _form_text("decision", 16).lower()
+    human_root_cause = _form_text("human_root_cause", 20_000)
+    human_correction = _form_text("human_correction", 20_000)
+    reason           = _form_text("reason", 20_000)
+    fix_applied      = _form_text("fix_applied", 20_000)
+    verified_before  = _form_text("verified_before", 16) or None
+    verified_after   = _form_text("verified_after", 16) or None
 
     if decision not in ("accept", "edit", "reject"):
         flash("Invalid decision — must be accept, edit, or reject.", "error")
@@ -395,6 +404,16 @@ def api_stats():
 
 def _api_error(message: str, status: int):
     return jsonify({"error": message}), status
+
+
+def _form_text(field: str, max_length: int) -> str:
+    value = request.form.get(field, "")
+    if not isinstance(value, str):
+        abort(400, description=f"{field} must be text.")
+    value = value.strip()
+    if len(value) > max_length:
+        abort(413, description=f"{field} exceeds the {max_length} character limit.")
+    return value
 
 
 def _api_text(payload: dict, field: str, required: bool = False) -> str:

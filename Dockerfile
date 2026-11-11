@@ -12,6 +12,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 RUN mkdir -p database
+RUN addgroup --system app && adduser --system --ingroup app app \
+  && chown -R app:app /app
+USER app
 
 EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
