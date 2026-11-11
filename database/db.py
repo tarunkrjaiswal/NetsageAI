@@ -248,7 +248,7 @@ def insert_seeded_diagnosis(d: dict, seed_key: str, conn) -> int | None:
       json.dumps(d.get("fix_steps", [])), json.dumps(d.get("rule_results", [])),
       int(bool(d.get("ai_conflict", False))), seed_key)
     if _USE_POSTGRES:
-        sql += " ON CONFLICT (seed_key) DO NOTHING RETURNING id"
+        sql += " ON CONFLICT (seed_key) WHERE seed_key IS NOT NULL DO NOTHING RETURNING id"
     else:
         sql = sql.replace("INSERT INTO", "INSERT OR IGNORE INTO")
     cur = conn.execute(sql, params)

@@ -1,6 +1,8 @@
 import re
+import sqlite3
 
 import app as app_module
+from database import db
 
 
 def setup_module():
@@ -102,6 +104,36 @@ def test_diagnosis_page_hides_submitted_inputs_by_default(monkeypatch):
     body = response.get_data(as_text=True)
     assert "private topology" not in body
     assert "private command output" not in body
+
+
+def test_seeded_diagnosis_is_idempotent_in_sqlite():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    with open(db.SCHEMA, encoding="utf-8") as schema:
+        conn.executescript(schema.read())
+
+    diagnosis = {
+        "case_ref": "TEST",
+        "category": "VLAN",
+        "symptom": "Seeded test diagnosis",
+        "topology": "SW1 -> SW2",
+        "show_output": "not-trunking",
+        "root_cause": "Trunk is down",
+        "confidence": "High",
+        "evidence": [],
+        "fix_steps": [],
+        "rule_results": [],
+    }
+    first_id = db.insert_seeded_diagnosis(diagnosis, "test-seed", conn)
+    db.insert_review({"diagnosis_id": first_id, "decision": "accept"}, conn)
+    conn.commit()
+
+    second_id = db.insert_seeded_diagnosis(diagnosis, "test-seed", conn)
+
+    assert first_id is not None
+    assert second_id is None
+    assert conn.execute("SELECT COUNT(*) FROM diagnoses").fetchone()[0] == 1
+    conn.close()
 
 
 def test_diagnose_api_validates_and_returns_structured_result(monkeypatch):
