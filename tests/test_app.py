@@ -1,6 +1,8 @@
 import re
 import sqlite3
 
+import pytest
+
 import app as app_module
 from database import db
 
@@ -128,11 +130,117 @@ def test_seeded_diagnosis_is_idempotent_in_sqlite():
     db.insert_review({"diagnosis_id": first_id, "decision": "accept"}, conn)
     conn.commit()
 
+    assert conn.execute(
+        "SELECT diagnosis_id FROM responsible_ai_log"
+    ).fetchone()["diagnosis_id"] == first_id
+
     second_id = db.insert_seeded_diagnosis(diagnosis, "test-seed", conn)
 
     assert first_id is not None
     assert second_id is None
     assert conn.execute("SELECT COUNT(*) FROM diagnoses").fetchone()[0] == 1
+    conn.close()
+
+
+def _sqlite_schema_connection():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    with open(db.SCHEMA, encoding="utf-8") as schema:
+        conn.executescript(schema.read())
+    return conn
+
+
+def _manual_diagnosis():
+    return {
+        "category": "VLAN",
+        "symptom": "VLAN 20 is unreachable",
+        "topology": "SW1 -> SW2",
+        "show_output": "Gi0/1 is not-trunking",
+        "root_cause": "The trunk is not established",
+        "confidence": "High",
+        "evidence": ["The interface is not-trunking"],
+        "fix_steps": ["Configure trunk mode"],
+        "rule_results": [],
+    }
+
+
+def test_reviewed_manual_diagnosis_is_in_responsible_ai_log_for_all_decisions():
+    conn = _sqlite_schema_connection()
+    for decision in ("accept", "edit", "reject"):
+        diagnosis_id = db.insert_diagnosis(_manual_diagnosis(), conn)
+        db.insert_review({
+            "diagnosis_id": diagnosis_id,
+            "decision": decision,
+            "human_root_cause": "Reviewed root cause",
+            "reason": "Human review completed",
+        }, conn)
+    conn.commit()
+
+    rows = conn.execute(
+        "SELECT diagnosis_id, category, ai_diagnosis, ai_confidence, human_decision "
+        "FROM responsible_ai_log ORDER BY diagnosis_id"
+    ).fetchall()
+
+    assert len(rows) == 3
+    assert [row["human_decision"] for row in rows] == ["accept", "edit", "reject"]
+    assert all(row["category"] == "VLAN" for row in rows)
+    assert all(row["ai_diagnosis"] == "The trunk is not established" for row in rows)
+    assert all(row["ai_confidence"] == "High" for row in rows)
+    conn.close()
+
+
+def test_unreviewed_manual_diagnosis_is_in_responsible_ai_log():
+    conn = _sqlite_schema_connection()
+    diagnosis_id = db.insert_diagnosis(_manual_diagnosis(), conn)
+    conn.commit()
+
+    row = conn.execute(
+        "SELECT diagnosis_id, category, ai_diagnosis, ai_confidence, human_decision "
+        "FROM responsible_ai_log WHERE diagnosis_id=?",
+        (diagnosis_id,),
+    ).fetchone()
+
+    assert dict(row) == {
+        "diagnosis_id": diagnosis_id,
+        "category": "VLAN",
+        "ai_diagnosis": "The trunk is not established",
+        "ai_confidence": "High",
+        "human_decision": None,
+    }
+    conn.close()
+
+
+def test_manual_review_retry_cannot_create_duplicate_audit_entry():
+    conn = _sqlite_schema_connection()
+    diagnosis_id = db.insert_diagnosis(_manual_diagnosis(), conn)
+    db.insert_review({"diagnosis_id": diagnosis_id, "decision": "accept"}, conn)
+    conn.commit()
+
+    with pytest.raises(sqlite3.IntegrityError):
+        db.insert_review({"diagnosis_id": diagnosis_id, "decision": "accept"}, conn)
+    assert conn.execute(
+        "SELECT COUNT(*) FROM responsible_ai_log WHERE diagnosis_id=?",
+        (diagnosis_id,),
+    ).fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT COUNT(*) FROM reviews WHERE diagnosis_id=?",
+        (diagnosis_id,),
+    ).fetchone()[0] == 1
+    conn.close()
+
+
+def test_diagnosis_and_review_rollback_together_in_sqlite():
+    conn = _sqlite_schema_connection()
+    try:
+        diagnosis_id = db.insert_diagnosis(_manual_diagnosis(), conn)
+        db.insert_review({"diagnosis_id": diagnosis_id, "decision": "reject"}, conn)
+        raise RuntimeError("simulate transaction failure")
+    except RuntimeError:
+        conn.rollback()
+
+    assert conn.execute("SELECT COUNT(*) FROM diagnoses").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM responsible_ai_log").fetchone()[0] == 0
     conn.close()
 
 

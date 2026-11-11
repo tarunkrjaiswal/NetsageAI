@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS reviews (
     reviewed_at         DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Responsible AI log view (pre-seeded + auto-populated)
+-- Responsible AI log view for every reviewed diagnosis
 CREATE VIEW IF NOT EXISTS responsible_ai_log AS
 SELECT
     d.id                AS diagnosis_id,
@@ -60,8 +60,7 @@ SELECT
     r.reason,
     r.reviewed_at
 FROM diagnoses d
-JOIN reviews r ON r.diagnosis_id = d.id
-WHERE r.decision IN ('edit', 'reject')
+LEFT JOIN reviews r ON r.diagnosis_id = d.id
 ORDER BY r.reviewed_at DESC;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_one_per_diagnosis ON reviews(diagnosis_id);

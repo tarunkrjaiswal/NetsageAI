@@ -139,8 +139,8 @@ def _schema_postgres() -> str:
       d.root_cause AS ai_diagnosis, d.confidence AS ai_confidence,
       r.decision AS human_decision, r.human_root_cause AS human_diagnosis,
       r.reason, r.reviewed_at
-    FROM diagnoses d JOIN reviews r ON r.diagnosis_id = d.id
-    WHERE r.decision IN ('edit','reject') ORDER BY r.reviewed_at DESC;
+    FROM diagnoses d LEFT JOIN reviews r ON r.diagnosis_id = d.id
+    ORDER BY r.reviewed_at DESC;
     """
 
 
@@ -160,6 +160,16 @@ def init_db():
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_diagnoses_seed_key "
                 "ON diagnoses(seed_key)"
+            )
+            conn.execute("DROP VIEW IF EXISTS responsible_ai_log")
+            conn.execute(
+                """CREATE VIEW responsible_ai_log AS
+                SELECT d.id AS diagnosis_id, d.case_ref, d.category,
+                  d.root_cause AS ai_diagnosis, d.confidence AS ai_confidence,
+                  r.decision AS human_decision, r.human_root_cause AS human_diagnosis,
+                  r.reason, r.reviewed_at
+                FROM diagnoses d LEFT JOIN reviews r ON r.diagnosis_id = d.id
+                ORDER BY r.reviewed_at DESC"""
             )
         conn.commit()
     finally:
@@ -205,7 +215,7 @@ def get_case(case_id: str) -> dict | None:
 
 # Diagnoses
 
-def insert_diagnosis(d: dict) -> int:
+def insert_diagnosis(d: dict, conn=None) -> int:
     sql = """INSERT INTO diagnoses
       (case_ref, category, symptom, topology, show_output, root_cause, osi_layer,
        confidence, evidence, next_command, fix_steps, rule_results, ai_conflict)
@@ -215,7 +225,7 @@ def insert_diagnosis(d: dict) -> int:
       json.dumps(d.get("evidence", [])), d.get("next_command"),
       json.dumps(d.get("fix_steps", [])), json.dumps(d.get("rule_results", [])),
       int(bool(d.get("ai_conflict", False))))
-    return _insert_id(sql, params)
+    return _insert_id(sql, params, conn)
 
 
 def insert_seeded_diagnosis(d: dict, seed_key: str, conn) -> int | None:

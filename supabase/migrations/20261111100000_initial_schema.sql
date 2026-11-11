@@ -65,6 +65,5 @@ select
     r.reason,
     r.reviewed_at
 from public.diagnoses d
-join public.reviews r on r.diagnosis_id = d.id
-where r.decision in ('edit', 'reject')
+left join public.reviews r on r.diagnosis_id = d.id
 order by r.reviewed_at desc;
