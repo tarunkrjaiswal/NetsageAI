@@ -1,0 +1,419 @@
+{% extends "base.html" %}
+{% block title %}Diagnosis #{{ diag.id }}{% endblock %}
+{% block meta_desc %}AI diagnosis for: {{ diag.symptom[:80] }}{% endblock %}
+
+{% block head %}
+<style>
+  .reviewed-overlay {
+    background: rgba(0,255,136,0.06);
+    border: 1px solid rgba(0,255,136,0.2);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .reviewed-overlay .dec-icon { font-size:1.5rem; }
+  .reviewed-overlay.edit-ov  { background:rgba(255,179,71,0.06); border-color:rgba(255,179,71,0.2); }
+  .reviewed-overlay.reject-ov{ background:rgba(255,71,87,0.06);  border-color:rgba(255,71,87,0.2); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Breadcrumb -->
+<div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:1.5rem;">
+  <a href="{{ url_for('index') }}" style="color:var(--text-muted);text-decoration:none;">🏠 Home</a>
+  <span style="margin:0 6px;">›</span>
+  <span style="color:var(--text-secondary);">Diagnosis #{{ diag.id }}</span>
+  {% if diag.case_ref %}
+  <span style="margin:0 6px;">›</span>
+  <span>Case #{{ diag.case_ref }}</span>
+  {% endif %}
+</div>
+
+<!-- Conflict banner (shown if AI & rule checker disagree) -->
+{% if diag.ai_conflict %}
+<div class="conflict-banner" style="margin-bottom:1.5rem;">
+  <span class="conflict-icon">⚠️</span>
+  <div>
+    <div class="conflict-title">AI ↔ Rule Checker Conflict Detected</div>
+    <div class="conflict-desc">
+      The Python rule checker identified failures that the AI diagnosis may not fully account for.
+      Review <strong>both</strong> panels carefully before deciding.
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Already reviewed overlay -->
+{% if review %}
+<div class="reviewed-overlay {{ 'edit-ov' if review.decision=='edit' else 'reject-ov' if review.decision=='reject' else '' }}">
+  <span class="dec-icon">
+    {% if review.decision == 'accept' %}✅
+    {% elif review.decision == 'edit' %}✏️
+    {% else %}❌{% endif %}
+  </span>
+  <div>
+    <div style="font-weight:700;color:{{ 'var(--green)' if review.decision=='accept' else 'var(--amber)' if review.decision=='edit' else 'var(--red)' }}">
+      Human Decision: {{ review.decision | upper }}
+    </div>
+    {% if review.human_root_cause and review.decision != 'accept' %}
+    <div style="font-size:0.875rem;color:var(--text-secondary);margin-top:2px;">
+      Corrected root cause: <strong>{{ review.human_root_cause }}</strong>
+    </div>
+    {% endif %}
+    {% if review.reason %}
+    <div style="font-size:0.82rem;color:var(--text-muted);margin-top:4px;">{{ review.reason }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="diagnosis-grid stagger">
+
+  <!-- ────────────── LEFT: Main panels ────────────── -->
+  <div class="diagnosis-main">
+
+    <!-- AI Diagnosis Card -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon cyan">🤖</div>
+        <div style="flex:1;">
+          <div class="card-title">AI Diagnosis</div>
+          <div class="card-subtitle">Evidence-based analysis — awaiting human review</div>
+        </div>
+        <!-- Category + Confidence badges -->
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <span class="badge badge-muted">{{ diag.category }}</span>
+          <span class="osi-pill">{{ diag.osi_layer }}</span>
+        </div>
+      </div>
+      <div class="card-body">
+
+        <!-- Root Cause -->
+        <div style="margin-bottom:1.5rem;">
+          <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem;">Root Cause</div>
+          <div style="font-size:1.05rem;font-weight:700;color:var(--text-primary);line-height:1.4;">
+            {{ diag.root_cause }}
+          </div>
+        </div>
+
+        <!-- Confidence meter -->
+        <div style="margin-bottom:1.5rem;">
+          <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem;">Confidence</div>
+          <div class="confidence-bar-wrap conf-{{ diag.confidence | lower }}">
+            <div class="confidence-label">{{ diag.confidence }}</div>
+            <div class="confidence-bar-track">
+              <div class="confidence-bar-fill" id="conf-fill"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Evidence -->
+        <div style="margin-bottom:1.5rem;">
+          <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.75rem;">Evidence from Show Output</div>
+          <ul class="evidence-list">
+            {% for item in diag.evidence %}
+            <li class="evidence-item">
+              <span class="evidence-bullet">{{ loop.index }}</span>
+              <span>{{ item }}</span>
+            </li>
+            {% else %}
+            <li class="evidence-item"><span style="color:var(--text-muted);">No evidence extracted.</span></li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <!-- Next command -->
+        <div style="margin-bottom:1.5rem;">
+          <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem;">Recommended Next Command</div>
+          <div class="next-cmd">
+            <span>$</span>
+            <span>{{ diag.next_command }}</span>
+          </div>
+        </div>
+
+        <!-- Fix steps -->
+        <div>
+          <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.75rem;">Suggested Fix Steps</div>
+          <ol class="fix-steps">
+            {% for step in diag.fix_steps %}
+            <li class="fix-step">
+              <span class="step-num">{{ loop.index }}</span>
+              <span>{{ step }}</span>
+            </li>
+            {% else %}
+            <li class="fix-step"><span style="color:var(--text-muted);">No fix steps available.</span></li>
+            {% endfor %}
+          </ol>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Original Input Card -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon amber">📄</div>
+        <div>
+          <div class="card-title">Case Details</div>
+          <div class="card-subtitle">The input used for this analysis</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div style="margin-bottom:1rem;">
+          <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem;">Symptom</div>
+          <div style="font-size:0.9rem;color:var(--text-primary);">{{ diag.symptom }}</div>
+        </div>
+        {% if diag.topology %}
+        <div style="margin-bottom:1rem;">
+          <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem;">Topology</div>
+          <div style="font-size:0.9rem;color:var(--text-secondary);">{{ diag.topology }}</div>
+        </div>
+        {% endif %}
+        <div>
+          <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem;">Show-Command Output</div>
+          <div class="code-block">{{ diag.show_output }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Verification card (shown after review) -->
+    {% if review and (review.verified_before or review.verified_after) %}
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon green">✅</div>
+        <div>
+          <div class="card-title">Verification Result</div>
+          <div class="card-subtitle">Was connectivity restored after the fix?</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <div style="text-align:center;padding:1rem;border-radius:var(--radius);background:rgba(255,71,87,0.08);border:1px solid rgba(255,71,87,0.2);">
+            <div style="font-size:2rem;margin-bottom:4px;">{{ '✅' if review.verified_before == 'pass' else '❌' }}</div>
+            <div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);">BEFORE FIX</div>
+            <div style="font-weight:600;color:{{ 'var(--green)' if review.verified_before == 'pass' else 'var(--red)' }};">{{ review.verified_before | upper if review.verified_before else 'N/A' }}</div>
+          </div>
+          <div style="text-align:center;padding:1rem;border-radius:var(--radius);background:rgba(0,255,136,0.06);border:1px solid rgba(0,255,136,0.2);">
+            <div style="font-size:2rem;margin-bottom:4px;">{{ '✅' if review.verified_after == 'pass' else '❌' }}</div>
+            <div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);">AFTER FIX</div>
+            <div style="font-weight:600;color:{{ 'var(--green)' if review.verified_after == 'pass' else 'var(--red)' }};">{{ review.verified_after | upper if review.verified_after else 'N/A' }}</div>
+          </div>
+        </div>
+        {% if review.fix_applied %}
+        <div style="margin-top:1rem;font-size:0.875rem;color:var(--text-secondary);">
+          <strong style="color:var(--text-primary);">Fix Applied:</strong> {{ review.fix_applied }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+  </div><!-- /diagnosis-main -->
+
+  <!-- ────────────── RIGHT: Sidebar ────────────── -->
+  <div class="diagnosis-side">
+
+    <!-- Python Rule Checker -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon amber">🐍</div>
+        <div>
+          <div class="card-title">Python Rule Checker</div>
+          <div class="card-subtitle">Deterministic validation results</div>
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:0.75rem;">
+        {% set rules = diag.rule_results %}
+        {% if rules %}
+          {% set fails = rules | selectattr('status','equalto','fail') | list %}
+          {% set warns = rules | selectattr('status','equalto','warn') | list %}
+          {% set passes= rules | selectattr('status','equalto','pass') | list %}
+
+          <!-- Summary pills -->
+          <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;">
+            {% if fails  %}<span class="badge badge-red">  ✖ {{ fails  | length }} Fail  </span>{% endif %}
+            {% if warns  %}<span class="badge badge-amber">⚠ {{ warns  | length }} Warn  </span>{% endif %}
+            {% if passes %}<span class="badge badge-green">✓ {{ passes | length }} Pass  </span>{% endif %}
+          </div>
+
+          {% for rule in rules %}
+          <div class="rule-item rule-{{ rule.status }}">
+            <span class="rule-icon">
+              {% if rule.status == 'pass' %}✅
+              {% elif rule.status == 'warn' %}⚠️
+              {% else %}❌{% endif %}
+            </span>
+            <div>
+              <div class="rule-name {{ rule.status }}">
+                {{ rule.rule | replace('_',' ') | title }}
+              </div>
+              <div class="rule-detail">{{ rule.detail }}</div>
+            </div>
+          </div>
+          {% endfor %}
+
+        {% else %}
+          <div style="color:var(--text-muted);font-size:0.875rem;text-align:center;padding:1rem 0;">
+            No rule results available.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Human Review Panel -->
+    <div class="review-panel">
+      <div class="review-panel-header">
+        <span>👨‍💼</span> Human Review
+      </div>
+
+      {% if review %}
+        <!-- Already reviewed -->
+        <div style="padding:1.25rem 1.5rem;">
+          <div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;">Decision</div>
+          <div class="badge {{ 'badge-green' if review.decision=='accept' else 'badge-amber' if review.decision=='edit' else 'badge-red' }}"
+               style="font-size:0.85rem;padding:5px 14px;">
+            {% if review.decision == 'accept' %}✅ ACCEPTED
+            {% elif review.decision == 'edit' %}✏️ EDITED
+            {% else %}❌ REJECTED{% endif %}
+          </div>
+
+          {% if review.human_root_cause and review.decision != 'accept' %}
+          <div style="margin-top:1rem;">
+            <div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.4rem;">Human Root Cause</div>
+            <div style="font-size:0.875rem;color:var(--text-primary);">{{ review.human_root_cause }}</div>
+          </div>
+          {% endif %}
+
+          {% if review.human_correction %}
+          <div style="margin-top:1rem;">
+            <div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.4rem;">Correction Notes</div>
+            <div style="font-size:0.875rem;color:var(--text-secondary);">{{ review.human_correction }}</div>
+          </div>
+          {% endif %}
+
+          {% if review.reason %}
+          <div style="margin-top:1rem;">
+            <div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.4rem;">Reason</div>
+            <div style="font-size:0.875rem;color:var(--text-secondary);">{{ review.reason }}</div>
+          </div>
+          {% endif %}
+
+          <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--glass-border);font-size:0.78rem;color:var(--text-muted);">
+            Reviewed: {{ review.reviewed_at }}
+          </div>
+        </div>
+
+      {% else %}
+        <!-- Review form -->
+        <form action="{{ url_for('submit_review', diag_id=diag.id) }}" method="POST" id="review-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <div class="review-actions">
+            <button type="button" class="btn btn-success" id="btn-accept" onclick="submitDecision('accept')">
+              ✅ Accept
+            </button>
+            <button type="button" class="btn btn-warning" id="btn-edit" onclick="toggleEdit()">
+              ✏️ Edit
+            </button>
+            <button type="button" class="btn btn-danger"  id="btn-reject" onclick="submitDecision('reject')">
+              ❌ Reject
+            </button>
+          </div>
+
+          <!-- Edit form (hidden until Edit clicked) -->
+          <div class="edit-form" id="edit-form">
+            <div class="form-group">
+              <label class="form-label">Corrected Root Cause</label>
+              <input class="form-control" name="human_root_cause" id="human_root_cause"
+                     placeholder="What is the actual root cause?"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Correction Notes</label>
+              <textarea class="form-control" name="human_correction" rows="3"
+                        placeholder="Explain what the AI got wrong and how you identified the real issue..."></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Reason for Edit</label>
+              <input class="form-control" name="reason"
+                     placeholder="e.g. Rule checker showed VLAN not on trunk"/>
+            </div>
+            <div style="border-top:1px solid var(--glass-border);padding-top:1rem;margin-top:0.5rem;">
+              <div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.75rem;">Verification (Optional)</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem;">
+                <div class="form-group mb-0">
+                  <label class="form-label" style="font-size:0.72rem;">Before Fix</label>
+                  <select class="form-control" name="verified_before">
+                    <option value="">— select —</option>
+                    <option value="fail">❌ Fail</option>
+                    <option value="pass">✅ Pass</option>
+                  </select>
+                </div>
+                <div class="form-group mb-0">
+                  <label class="form-label" style="font-size:0.72rem;">After Fix</label>
+                  <select class="form-control" name="verified_after">
+                    <option value="">— select —</option>
+                    <option value="fail">❌ Fail</option>
+                    <option value="pass">✅ Pass</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group mb-0">
+                <label class="form-label" style="font-size:0.72rem;">Fix Applied</label>
+                <input class="form-control" name="fix_applied" placeholder="e.g. Added missing VLAN 30 to trunk"/>
+              </div>
+            </div>
+            <button type="button" class="btn btn-warning btn-full mt-2"
+                    onclick="submitDecision('edit')" style="margin-top:1rem;">
+              ✏️ Submit Edit
+            </button>
+          </div>
+
+          <input type="hidden" name="decision" id="decision-input" value=""/>
+          <input type="hidden" name="reason"   id="reason-hidden"   value=""/>
+        </form>
+      {% endif %}
+
+    </div><!-- /review-panel -->
+
+    <!-- Back button -->
+    <a href="{{ url_for('index') }}" class="btn btn-ghost btn-full">← New Analysis</a>
+
+  </div><!-- /diagnosis-side -->
+
+</div><!-- /diagnosis-grid -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleEdit() {
+  const ef = document.getElementById('edit-form');
+  ef.classList.toggle('active');
+}
+
+function submitDecision(decision) {
+  const form = document.getElementById('review-form');
+  document.getElementById('decision-input').value = decision;
+
+  // Validate edit has a correction
+  if (decision === 'edit') {
+    const rc = document.getElementById('human_root_cause');
+    if (!rc.value.trim()) {
+      rc.focus();
+      rc.style.borderColor = 'var(--red)';
+      return;
+    }
+  }
+
+  // Confirm reject
+  if (decision === 'reject') {
+    if (!confirm('Reject this AI diagnosis? The diagnosis will be marked as incorrect.')) return;
+  }
+
+  form.submit();
+}
+</script>
+{% endblock %}

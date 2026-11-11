@@ -1,0 +1,273 @@
+case_id,category,symptom,topology,show_output,expected_fault,osi_layer,concept,severity
+001,VLAN,"PC1 in VLAN 10 can ping other VLAN 10 hosts but cannot communicate with any device in VLAN 20","PC1(VLAN10) -> SW1 -> SW2 -> PC2(VLAN20)","show vlan brief
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -----
+1    default                          active    Gi0/1
+10   SALES                            active    Fa0/1, Fa0/2
+20   HR                               active    Fa0/3
+
+show ip route
+Gateway of last resort is not set
+C 192.168.10.0/24 is directly connected, Vlan10","VLAN 20 exists but inter-VLAN routing is not configured on the router/L3 switch","Layer 2/3","VLAN / Inter-VLAN Routing","High"
+002,VLAN,"PC2 cannot communicate with any other device on the network despite being connected to SW1","PC2 -> SW1 -> Router","show vlan brief
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -----
+1    default                          active    Gi0/1, Fa0/5
+10   SALES                            active    Fa0/1, Fa0/2
+
+show interfaces Fa0/5
+FastEthernet0/5 is up, line protocol is up
+Switchport: Enabled
+Administrative Mode: access
+Access Mode VLAN: 1","PC2 is assigned to VLAN 1 (default) instead of VLAN 10",Layer 2,VLAN Assignment,Medium
+003,VLAN,"All PCs lose connectivity to the server after a new trunk link was configured between SW1 and SW2","PC1 -> SW1 ==(trunk)== SW2 -> Server","show interfaces trunk
+Port      Mode         Encapsulation  Status        Native vlan
+Gi0/1     on           802.1q         trunking      1
+
+SW1:
+show interfaces trunk
+Port      Mode         Encapsulation  Status        Native vlan
+Gi0/1     on           802.1q         trunking      99","Native VLAN mismatch between SW1 (native 1) and SW2 (native 99) causing STP issues and traffic loss",Layer 2,Native VLAN Mismatch,High
+004,VLAN,"PC1 in VLAN 30 cannot reach the server even though VLAN 10 and VLAN 20 work fine","PC1(VLAN30) -> SW1 -> Router -> Server","show vlan brief
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -----
+1    default                          active
+10   SALES                            active    Fa0/1
+20   HR                               active    Fa0/2
+
+show interfaces trunk
+Port      Mode         Encapsulation  Status        Native vlan
+Gi0/1     on           802.1q         trunking      1
+VLANs allowed on trunk: 1-29,31-4094","VLAN 30 is not allowed on the trunk link",Layer 2,VLAN Not Allowed on Trunk,Critical
+005,VLAN,"Intermittent connectivity between devices in different VLANs after SW2 was added to the network","PC1(VLAN10) -> SW1 -> SW2 -> PC2(VLAN20)","show interfaces trunk
+SW1 Gi0/1:
+Port      Mode         Encapsulation  Status        Native vlan
+Gi0/1     auto         802.1q         not-trunking  1
+
+SW2 Gi0/1:
+Port      Mode         Encapsulation  Status        Native vlan
+Gi0/1     auto         802.1q         not-trunking  1","Trunk not formed because both sides are set to auto (DTP requires at least one side to be desirable or on)",Layer 2,Trunk Not Configured,Medium
+006,Routing,"PC1 can ping its default gateway but cannot reach the 192.168.30.0/24 server network","PC1 -> R1 -> R2 -> Server(192.168.30.0/24)","show ip route (R1)
+Gateway of last resort is not set
+C 192.168.10.0/24 is directly connected, Gi0/0
+C 192.168.20.0/24 is directly connected, Gi0/1
+
+show ip route (R2)
+C 192.168.20.0/24 is directly connected, Gi0/0
+C 192.168.30.0/24 is directly connected, Gi0/1","Missing static route on R1 to 192.168.30.0/24 via R2 (192.168.20.2)","Layer 3",Static Route Missing,High
+007,Routing,"PC1 can reach the server but the server cannot respond back to PC1","PC1(192.168.10.10) -> R1 -> R2 -> Server(192.168.30.10)","show ip route (R1)
+C 192.168.10.0/24 is directly connected, Gi0/0
+S 192.168.30.0/24 [1/0] via 192.168.20.2
+
+show ip route (R2)
+C 192.168.20.0/24 is directly connected, Gi0/0
+C 192.168.30.0/24 is directly connected, Gi0/1","R2 has no return route to 192.168.10.0/24 — asymmetric routing causes one-way connectivity","Layer 3",Asymmetric/Missing Return Route,High
+008,Routing,"PC1 has no internet access despite a default route being configured","PC1 -> R1 -> ISP Router -> Internet","show ip route (R1)
+Gateway of last resort is 10.0.0.2 to network 0.0.0.0
+S* 0.0.0.0/0 [1/0] via 10.0.0.2
+
+show ip interface brief
+Interface   IP-Address   OK? Method Status    Protocol
+Gi0/0       192.168.1.1  YES manual up        up
+Gi0/1       10.0.0.1     YES manual up        down","WAN interface Gi0/1 is physically down — default route next-hop is unreachable","Layer 1/3",Interface Down / Default Route Unreachable,High
+009,Routing,"OSPF is configured but routes are not being exchanged between R1 and R2","R1 <-> R2 running OSPF area 0","show ip protocols (R1)
+Routing Protocol is ospf 1
+  Router ID: 1.1.1.1
+  Area 0: 192.168.10.0/24
+
+show ip ospf neighbor (R1)
+(no neighbors listed)
+
+show ip ospf neighbor (R2)
+(no neighbors listed)
+
+show run | section ospf (R2)
+router ospf 1
+ router-id 2.2.2.2
+ network 192.168.20.0 0.0.0.255 area 1","R2 places its interface in OSPF Area 1 while R1 uses Area 0 — area mismatch prevents adjacency","Layer 3",OSPF Area Mismatch,Medium
+010,Routing,"PC1 traffic to the internet is being routed in a loop — TTL exceeded errors on traceroute","PC1 -> R1 -> R2","show ip route (R1)
+S* 0.0.0.0/0 [1/0] via 192.168.20.2
+
+show ip route (R2)
+S* 0.0.0.0/0 [1/0] via 192.168.10.1","R1 and R2 point default routes at each other — routing loop for unknown destinations","Layer 3",Routing Loop / Incorrect Next-Hop,High
+011,DHCP,"PCs on VLAN 10 receive DHCP addresses from the wrong pool and cannot communicate with each other","PC1(VLAN10) -> SW1 -> DHCP Server","show ip dhcp pool
+Pool VLAN10:
+ Network: 192.168.20.0/24
+ Default Router: 192.168.20.1
+ DNS Server: 8.8.8.8
+
+Pool VLAN20:
+ Network: 192.168.10.0/24
+ Default Router: 192.168.10.1","DHCP pool networks are swapped — VLAN 10 pool uses VLAN 20 address space and vice versa","Layer 3",DHCP Pool Misconfigured,High
+012,DHCP,"New PC cannot get an IP address — all DHCP requests are dropped","PC1 -> SW1 -> R1(DHCP Server)","show ip dhcp pool
+Pool LAN:
+ Network: 192.168.10.0/24
+ Default Router: 192.168.10.1
+
+show ip dhcp binding
+(no entries)
+
+show run | section dhcp
+ip dhcp excluded-address 192.168.10.1 192.168.10.254","Entire address range is excluded — no usable addresses remain in the DHCP pool","Layer 3",DHCP Excluded Address Range,Medium
+013,DHCP,"PCs in a remote subnet cannot obtain DHCP addresses from the central DHCP server","PC1(192.168.20.x) -> R1 -> DHCP Server(192.168.10.1)","show run | section dhcp
+ip dhcp pool REMOTE
+ network 192.168.20.0 /24
+ default-router 192.168.20.1
+
+show ip helper-address (R1 Gi0/0 facing 192.168.20.0)
+(no helper address configured)","DHCP relay (ip helper-address) not configured on R1 interface facing remote subnet","Layer 3",DHCP Relay Missing,Medium
+014,DHCP,"PC1 always receives the same IP address that was previously assigned to a decommissioned device, causing IP conflict","Multiple PCs on 192.168.10.0/24","show ip dhcp binding
+IP address       Client-ID          Lease expiration
+192.168.10.50    0100.1234.5678.ab  Infinite
+192.168.10.51    0100.abcd.ef12.34  Sep 28 2025 12:00 AM","Stale DHCP binding with infinite lease is holding an address — causes conflict when new device connects","Layer 3",Stale DHCP Binding,Low
+015,DNS,"Users can access servers by IP address but hostnames do not resolve","PC1 -> SW1 -> R1 -> DNS Server -> Internet","show ip interface brief
+Interface   IP-Address   OK? Method Status    Protocol
+Gi0/2       8.8.4.4      YES manual up        up
+
+ipconfig /all (PC1)
+DNS Servers: 192.168.10.53
+
+ping 192.168.10.53
+Request timed out.","DNS server IP configured on clients (192.168.10.53) does not exist — server is actually at 8.8.4.4","Layer 7",Incorrect DNS Server IP,High
+016,DNS,"DNS resolution works for internal hosts but fails for external internet domains","PC1 -> R1 -> DNS Server(192.168.10.53) -> Internet","show run | section dns (DNS Server)
+ip name-server 192.168.10.53
+no ip domain-lookup
+
+ping 8.8.8.8 (from DNS Server)
+Request timed out.","DNS server itself has no internet connectivity — cannot perform recursive lookups for external domains","Layer 3/7",DNS Server No Internet Access,Medium
+017,DNS,"Some hosts can resolve DNS but others on the same subnet cannot","Mixed hosts on 192.168.10.0/24","ipconfig (PC1 - working)
+DNS Server: 8.8.8.8
+
+ipconfig (PC2 - failing)
+DNS Server: 0.0.0.0
+
+show ip dhcp pool
+Pool LAN:
+ DNS Server: 8.8.8.8","PC2 has a static IP configuration with blank DNS server — DHCP pool is correct but PC2 is not using DHCP","Layer 7",Client DNS Misconfiguration,Low
+018,DNS,"DNS resolution is intermittently failing — sometimes works sometimes times out","PC1 -> R1 -> Primary DNS -> Secondary DNS","ping 192.168.10.53 (primary DNS)
+Request timed out.
+Request timed out.
+
+ping 192.168.10.54 (secondary DNS)
+Reply from 192.168.10.54: bytes=32 time<1ms","Primary DNS server is down — no failover configured on clients; only secondary is available","Layer 7",Primary DNS Server Down,Medium
+019,Gateway,"PC1 has a valid IP and subnet but cannot reach any device outside its subnet","PC1(192.168.10.25/24 GW:192.168.20.1) -> SW1 -> R1","ipconfig (PC1)
+IPv4 Address: 192.168.10.25
+Subnet Mask: 255.255.255.0
+Default Gateway: 192.168.20.1
+
+ping 192.168.10.1
+Reply from 192.168.10.1
+
+ping 192.168.20.1
+Request timed out.","Gateway 192.168.20.1 is on a different subnet than PC1 (192.168.10.x) — gateway is unreachable","Layer 3",Gateway Subnet Mismatch,High
+020,Gateway,"PC1 cannot reach any external network — pings to gateway time out","PC1(192.168.10.10/24) -> SW1 -> R1(Gi0/0: 192.168.10.1)","ping 192.168.10.1 (from PC1)
+Request timed out.
+
+show ip interface brief (R1)
+Interface   IP-Address   OK? Method Status    Protocol
+Gi0/0       192.168.10.1 YES manual admin down  down","Router interface Gi0/0 is administratively shut down — gateway is unreachable","Layer 1",Interface Shutdown,High
+021,Gateway,"PC1 can ping the gateway but traceroute shows packets stopping at R1 with no further forwarding","PC1 -> R1 -> R2 -> Server","traceroute 192.168.30.10 (from PC1)
+ 1 192.168.10.1 1 ms
+ 2 * * *
+ 3 * * *
+
+show ip route (R1)
+C 192.168.10.0/24 directly connected Gi0/0
+C 192.168.20.0/24 directly connected Gi0/1","R1 has no route to the destination 192.168.30.0/24 — packets are dropped at the gateway","Layer 3",Gateway No Onward Route,Medium
+022,Gateway,"After changing R1 IP addressing, half the PCs can reach external networks and half cannot","Mixed PCs on 192.168.10.0/24","ipconfig (PC1 - working)
+Default Gateway: 192.168.10.254
+
+ipconfig (PC2 - failing)
+Default Gateway: 192.168.10.1
+
+show ip interface brief (R1)
+Gi0/0  192.168.10.254  YES manual up up","R1 gateway IP was changed from .1 to .254 — PCs with old static gateway (.1) are not updated","Layer 3",Stale Gateway IP on Clients,Medium
+023,ACL,"PC1 can ping the server but cannot access the web server on port 80","PC1(192.168.10.10) -> R1 -> Server(192.168.30.10)","show access-lists
+Extended IP access list 110
+ 10 permit icmp 192.168.10.0 0.0.0.255 any
+ 20 deny tcp 192.168.10.0 0.0.0.255 any eq 80
+ 30 permit ip any any
+
+show run | section interface Gi0/1
+ ip access-group 110 in","ACL 110 explicitly denies TCP port 80 from the PC subnet — HTTP blocked while ICMP is permitted","Layer 3/4",ACL Blocking Specific Port,High
+024,ACL,"No traffic can pass from PC1 subnet to the server subnet — even ping fails","PC1(192.168.10.0/24) -> R1 -> Server(192.168.30.0/24)","show access-lists
+Extended IP access list 120
+ 10 deny ip 192.168.10.0 0.0.0.255 192.168.30.0 0.0.0.255
+ 20 permit ip any any
+
+show run | section interface Gi0/0
+ ip access-group 120 in","ACL 120 has a deny rule for all traffic from 192.168.10.0/24 to 192.168.30.0/24 as the first entry","Layer 3",ACL Denying All Traffic,Critical
+025,ACL,"Traffic from VLAN 10 to VLAN 30 is being blocked but traffic from VLAN 20 to VLAN 30 works fine","PC1(VLAN10) -> R1 -> Server(VLAN30)","show access-lists
+Extended IP access list 130
+ 10 deny ip 192.168.10.0 0.0.0.255 192.168.30.0 0.0.0.255
+ 20 permit ip 192.168.20.0 0.0.0.255 192.168.30.0 0.0.0.255
+ 30 permit ip any any
+
+show run | section interface Gi0/0
+ ip access-group 130 out","ACL applied outbound but should be inbound — wrong ACL direction blocks VLAN10 traffic incorrectly","Layer 3",ACL Wrong Direction,High
+026,ACL,"After adding a security ACL the network administrator can no longer SSH into R1 from the management PC","MgmtPC(192.168.99.10) -> R1","show access-lists
+Extended IP access list 140
+ 10 permit ip 192.168.10.0 0.0.0.255 any
+ 20 deny ip any any
+
+show run | section line vty
+ access-class 140 in","ACL 140 permits only 192.168.10.0/24 and denies all else — management subnet 192.168.99.0/24 is blocked","Layer 3/4",ACL Missing Management Rule,Medium
+027,NAT,"Internal PCs can reach each other but cannot access the internet despite NAT being configured","PC1(192.168.10.10) -> R1(NAT) -> ISP","show ip nat translations
+(no entries)
+
+show run | section interface
+interface Gi0/0
+ ip address 192.168.10.1 255.255.255.0
+ ip nat inside
+interface Gi0/1
+ ip address 10.0.0.1 255.255.255.252
+
+show run | section ip nat
+ip nat inside source list 1 interface Gi0/1 overload
+access-list 1 permit 10.0.0.0 0.0.0.255","NAT ACL matches 10.0.0.0/24 (the WAN subnet) instead of the LAN 192.168.10.0/24 — inside hosts never match","Layer 3",NAT ACL Mismatch,High
+028,NAT,"All internet traffic stops working after the ISP changed R1 WAN interface from Gi0/1 to Gi0/2","PC1 -> R1 -> ISP","show run | section ip nat
+ip nat inside source list 1 interface Gi0/1 overload
+
+show ip interface brief
+Interface   IP-Address   OK? Method Status    Protocol
+Gi0/1       unassigned   YES unset  down      down
+Gi0/2       10.0.0.1     YES manual up        up","NAT still references old interface Gi0/1 which is now down — outside interface not updated to Gi0/2","Layer 3",NAT Wrong Outside Interface,High
+029,NAT,"Static NAT is configured for a server but external clients receive connection refused","External Client -> R1 -> Server(192.168.10.100)","show ip nat translations
+Pro  Inside global     Inside local       Outside local
+tcp  200.1.1.10:80     192.168.10.100:80  ---
+
+show ip interface brief
+Gi0/0  192.168.10.1  YES manual up        up
+
+ping 192.168.10.100 (from R1)
+Request timed out.","Internal server 192.168.10.100 is unreachable from router — server is offline or has wrong IP","Layer 3",NAT Target Host Unreachable,Medium
+030,Wireless,"Wireless clients can see the SSID but authentication always fails","Wireless PC -> AP -> SW1 -> Controller","show run (AP)
+dot11 ssid CORPORATE
+ authentication open
+ authentication key-management wpa version 2
+ wpa-psk ascii WRONGPASSWORD
+
+Client error: PSK mismatch","WPA2 pre-shared key configured on AP does not match client configuration — authentication handshake fails","Layer 2",Wireless PSK Mismatch,Medium
+031,Wireless,"Wireless clients authenticate successfully but receive IPs in the wrong VLAN","Wireless PC -> AP -> SW1(trunk) -> DHCP Server","show run (AP)
+dot11 ssid STAFF
+ vlan 10
+ mbssid guest-mode
+
+show vlan brief (SW1)
+VLAN 10 STAFF   active Fa0/1
+VLAN 20 GUEST   active Fa0/2
+
+show ip dhcp binding
+192.168.20.x assigned to wireless clients","AP is mapping SSID STAFF to VLAN 10 but SW1 port is access VLAN 20 — clients get GUEST DHCP instead of STAFF","Layer 2",Wireless VLAN Mapping Wrong,High
+032,Wireless,"Wireless guest clients can access internal corporate servers — guest isolation not working","Guest Wireless PC -> AP -> SW1 -> Corporate Server","show run (AP)
+dot11 ssid GUEST
+ vlan 20
+ no guest-mode
+ 
+show run | section bridge-group
+interface Dot11Radio0.20
+ no ip proxy-arp
+ bridge-group 20
+
+interface GigabitEthernet0.20
+ bridge-group 20","Guest SSID shares a bridge group with internal interfaces — client isolation not enabled; guests reach corporate network","Layer 2",Guest Isolation Disabled,Critical

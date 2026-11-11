@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Analyze{% endblock %}
+{% block meta_desc %}Submit your Cisco network symptom, topology, and show-command output for AI-assisted diagnosis.{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-eyebrow">
+    <span>⚡</span> AI + Rules + Human Review
+  </div>
+  <h1>
+    <span class="gradient-text">NetSage AI</span><br/>
+    Network Troubleshooting Assistant
+  </h1>
+  <p>
+    Paste your Cisco show-command output, describe the symptom, and let
+    AI + deterministic rule checking identify the likely fault — then you review it.
+  </p>
+</section>
+
+<!-- Main form + sidebar -->
+<div class="analyze-grid stagger">
+
+  <!-- ── Left: Input form ────────────────────────────────────────────── -->
+  <div>
+    <form id="analyze-form" action="{{ url_for('analyze') }}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <!-- Load from dataset banner -->
+      {% if prefill %}
+      <div class="conflict-banner mb-2">
+        <span class="conflict-icon">📋</span>
+        <div>
+          <div class="conflict-title">Dataset Case Loaded — Case #{{ prefill.case_id }}</div>
+          <div class="conflict-desc">Fields pre-filled from the troubleshooting dataset. Run the analysis to identify the likely root cause.</div>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon cyan">🔍</div>
+          <div>
+            <div class="card-title">New Troubleshooting Case</div>
+            <div class="card-subtitle">Fill in all fields for the best diagnosis quality</div>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <!-- Issue Category -->
+          <div class="form-group">
+            <label class="form-label" for="category">Issue Category <span>*</span></label>
+            <select class="form-control" id="category" name="category" required>
+              <option value="">— Select category —</option>
+              {% for cat in categories %}
+              <option value="{{ cat }}" {{ 'selected' if prefill and prefill.category == cat }}>{{ cat }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- Symptom -->
+          <div class="form-group">
+            <label class="form-label" for="symptom">Symptom / Problem Description <span>*</span></label>
+            <textarea class="form-control" id="symptom" name="symptom" rows="3"
+                      placeholder="e.g. PC1 has an IP address but cannot reach the server at 192.168.30.10"
+                      required>{{ prefill.symptom if prefill else '' }}</textarea>
+            <div class="form-hint">Describe what the engineer observes — be specific about what works and what doesn't.</div>
+          </div>
+
+          <!-- Topology -->
+          <div class="form-group">
+            <label class="form-label" for="topology">Network Topology</label>
+            <input class="form-control" id="topology" name="topology" type="text"
+                   placeholder="e.g. PC1(VLAN10) → SW1 → R1 → Server(192.168.30.0/24)"
+                   value="{{ prefill.topology if prefill else '' }}"/>
+            <div class="form-hint">Brief path description or device list.</div>
+          </div>
+
+          <!-- Show output -->
+          <div class="form-group">
+            <label class="form-label" for="show_output">Cisco Show-Command Output <span>*</span></label>
+            <textarea class="form-control form-mono" id="show_output" name="show_output" rows="12"
+                      placeholder="Paste show ip route, show vlan brief, show interfaces trunk, show access-lists, etc."
+                      required>{{ prefill.show_output if prefill else '' }}</textarea>
+            <div class="form-hint">Include all relevant show outputs. The more detail, the higher the confidence.</div>
+          </div>
+
+          <!-- Optional: IP fields for gateway checker -->
+          <details style="margin-bottom:1.25rem;">
+            <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:var(--text-secondary);padding:0.5rem 0;">
+              🔧 Optional: IP Details for Gateway Rule Checker
+            </summary>
+            <div style="padding-top:1rem;display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;">
+              <div class="form-group mb-0">
+                <label class="form-label" for="pc_ip">PC IP Address</label>
+                <input class="form-control" id="pc_ip" name="pc_ip" placeholder="192.168.10.25"/>
+              </div>
+              <div class="form-group mb-0">
+                <label class="form-label" for="pc_mask">Subnet Mask</label>
+                <input class="form-control" id="pc_mask" name="pc_mask" placeholder="255.255.255.0"/>
+              </div>
+              <div class="form-group mb-0">
+                <label class="form-label" for="gateway">Default Gateway</label>
+                <input class="form-control" id="gateway" name="gateway" placeholder="192.168.20.1"/>
+              </div>
+            </div>
+          </details>
+
+          <!-- Hidden case ref -->
+          <input type="hidden" name="case_ref" value="{{ prefill.case_id if prefill else '' }}"/>
+
+          <button type="submit" class="btn btn-primary btn-lg btn-full" id="analyze-btn">
+            <span class="btn-text">⚡ Analyze with AI + Rule Checker</span>
+            <span class="spinner"></span>
+          </button>
+
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- ── Right: Sidebar ─────────────────────────────────────────────── -->
+  <div>
+
+    <!-- Architecture card -->
+    <div class="card mb-2">
+      <div class="card-header">
+        <div class="card-icon purple">🧠</div>
+        <div>
+          <div class="card-title">How It Works</div>
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:1rem;">
+        <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.875rem;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="width:28px;height:28px;border-radius:50%;background:var(--cyan-dim);border:1px solid var(--cyan-border);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--cyan);font-size:0.75rem;flex-shrink:0;">1</span>
+            <span style="color:var(--text-secondary);">You submit symptom + show output</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="width:28px;height:28px;border-radius:50%;background:var(--cyan-dim);border:1px solid var(--cyan-border);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--cyan);font-size:0.75rem;flex-shrink:0;">2</span>
+            <span style="color:var(--text-secondary);"><strong style="color:var(--amber);">Python rules</strong> check deterministic conditions</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="width:28px;height:28px;border-radius:50%;background:var(--cyan-dim);border:1px solid var(--cyan-border);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--cyan);font-size:0.75rem;flex-shrink:0;">3</span>
+            <span style="color:var(--text-secondary);"><strong style="color:var(--cyan);">AI engine</strong> produces evidence-based diagnosis</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="width:28px;height:28px;border-radius:50%;background:var(--cyan-dim);border:1px solid var(--cyan-border);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--cyan);font-size:0.75rem;flex-shrink:0;">4</span>
+            <span style="color:var(--text-secondary);"><strong style="color:var(--green);">You review</strong> — accept, edit, or reject</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Load from dataset -->
+    <div class="card mb-2">
+      <div class="card-header">
+        <div class="card-icon green">📋</div>
+        <div>
+          <div class="card-title">Load Dataset Case</div>
+          <div class="card-subtitle">{{ cases | length }} cases across 8 categories</div>
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:0.75rem;max-height:320px;overflow-y:auto;">
+        {% for case in cases %}
+        <a href="{{ url_for('load_case', case_id=case.case_id) }}"
+           style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0.5rem;border-radius:var(--radius-sm);text-decoration:none;transition:var(--transition);"
+           onmouseover="this.style.background='rgba(255,255,255,0.04)'" onmouseout="this.style.background='transparent'">
+          <div>
+            <span style="font-size:0.75rem;font-weight:700;color:var(--text-muted);">#{{ case.case_id }}</span>
+            <span style="font-size:0.82rem;color:var(--text-secondary);margin-left:8px;">{{ case.symptom[:55] }}{{ '…' if case.symptom|length > 55 }}</span>
+          </div>
+          <span class="badge badge-muted" style="margin-left:8px;flex-shrink:0;font-size:0.7rem;">{{ case.category }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Command reference -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon amber">📟</div>
+        <div><div class="card-title">Useful Show Commands</div></div>
+      </div>
+      <div class="card-body" style="padding-top:0.75rem;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          {% set cmds = [
+            ('VLAN', 'show vlan brief'),
+            ('VLAN', 'show interfaces trunk'),
+            ('Routing', 'show ip route'),
+            ('Interface', 'show ip interface brief'),
+            ('OSPF', 'show ip ospf neighbor'),
+            ('ACL', 'show access-lists'),
+            ('DHCP', 'show ip dhcp binding'),
+            ('NAT', 'show ip nat translations'),
+            ('Wireless', 'show run | section dot11'),
+          ] %}
+          {% for cat, cmd in cmds %}
+          <div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+            <span class="badge badge-muted" style="font-size:0.65rem;min-width:60px;text-align:center;">{{ cat }}</span>
+            <code style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:var(--cyan);">{{ cmd }}</code>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

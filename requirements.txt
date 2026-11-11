@@ -1,0 +1,6 @@
+flask>=3.0,<4.0
+google-genai>=1.0
+openai>=1.40
+psycopg2-binary>=2.9.9
+gunicorn>=22.0; platform_system != "Windows"
+python-dotenv>=1.0

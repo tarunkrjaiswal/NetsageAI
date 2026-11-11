@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+
+# Virtual environment
+venv/
+env/
+.venv/
+.env
+.env.*
+!.env.example
+
+# Database (auto-created on first run)
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+database/*.db
+
+# Environment / secrets
+.env
+*.env
+config_local.py
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Packet Tracer (binary — optional to exclude)
+# *.pka
+# *.pkt
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.db-journal

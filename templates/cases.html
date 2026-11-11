@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Case Dataset{% endblock %}
+{% block meta_desc %}Browse all 32 Cisco network troubleshooting cases across VLAN, Routing, DHCP, DNS, ACL, NAT, Gateway, and Wireless categories.{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-between align-center flex-wrap gap-2">
+  <div>
+    <h1>📋 Case Dataset</h1>
+    <p>{{ cases | length }} cases loaded — click any row to pre-fill the analysis form.</p>
+  </div>
+  <a href="{{ url_for('index') }}" class="btn btn-primary">⚡ New Analysis</a>
+</div>
+
+<!-- Category filter -->
+<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+  <a href="{{ url_for('cases_page') }}"
+     class="btn btn-sm {{ 'btn-primary' if not selected else 'btn-ghost' }}">All</a>
+  {% for cat in categories %}
+  <a href="{{ url_for('cases_page', category=cat) }}"
+     class="btn btn-sm {{ 'btn-primary' if selected == cat else 'btn-ghost' }}">{{ cat }}</a>
+  {% endfor %}
+</div>
+
+{% if cases %}
+<div class="card">
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Category</th>
+          <th>Symptom</th>
+          <th>Analysis</th>
+          <th>OSI Layer</th>
+          <th>Severity</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cases %}
+        <tr style="cursor:pointer;" onclick="window.location='{{ url_for('load_case', case_id=c.case_id) }}'">
+          <td>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--cyan);font-weight:600;">#{{ c.case_id }}</span>
+          </td>
+          <td>
+            <span class="badge badge-muted" style="font-size:0.72rem;">{{ c.category }}</span>
+          </td>
+          <td style="max-width:280px;color:var(--text-primary);">
+            <span title="{{ c.symptom }}">{{ c.symptom[:80] }}{{ '…' if c.symptom|length > 80 }}</span>
+          </td>
+          <td style="max-width:200px;color:var(--text-secondary);font-size:0.83rem;">
+            Run diagnosis to reveal the likely cause
+          </td>
+          <td>
+            <span class="osi-pill" style="font-size:0.72rem;">{{ c.osi_layer }}</span>
+          </td>
+          <td>
+            <span class="badge
+              {{ 'badge-muted' if c.severity=='Low'
+                 else 'badge-amber' if c.severity=='Medium'
+                 else 'badge-red' if c.severity=='High'
+                 else 'badge-red' }}"
+                 style="{{ 'border-color:rgba(255,0,60,0.4);background:rgba(255,0,60,0.15);' if c.severity=='Critical' else '' }}">
+              {{ '🔵' if c.severity=='Low' else '🟡' if c.severity=='Medium' else '🔴' if c.severity=='High' else '🚨' }}
+              {{ c.severity }}
+            </span>
+          </td>
+          <td>
+            <a href="{{ url_for('load_case', case_id=c.case_id) }}" class="btn btn-ghost btn-sm"
+               onclick="event.stopPropagation()">Load →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card" style="text-align:center;padding:3rem;">
+  <div style="font-size:2rem;margin-bottom:0.75rem;">📂</div>
+  <div style="color:var(--text-secondary);">No cases match the selected filter.</div>
+</div>
+{% endif %}
+{% endblock %}

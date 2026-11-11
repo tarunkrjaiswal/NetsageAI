@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block meta_desc %}NetSage AI analytics — case distribution, AI vs human agreement rate, and Responsible AI log.{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>📊 NetSage AI Dashboard</h1>
+  <p>Real-time analytics on AI performance, human review decisions, and responsible AI outcomes.</p>
+</div>
+
+<!-- KPI Row -->
+<div class="kpi-grid stagger">
+  <div class="kpi-card total">
+    <div class="kpi-value">{{ stats.total }}</div>
+    <div class="kpi-label">Total Reviews</div>
+  </div>
+  <div class="kpi-card accepted">
+    <div class="kpi-value">{{ stats.accepted }}</div>
+    <div class="kpi-label">Accepted</div>
+  </div>
+  <div class="kpi-card edited">
+    <div class="kpi-value">{{ stats.edited }}</div>
+    <div class="kpi-label">Edited</div>
+  </div>
+  <div class="kpi-card rejected">
+    <div class="kpi-value">{{ stats.rejected }}</div>
+    <div class="kpi-label">Rejected</div>
+  </div>
+  <div class="kpi-card agree">
+    <div class="kpi-value">{{ stats.agreement_pct }}%</div>
+    <div class="kpi-label">Agreement Rate</div>
+  </div>
+</div>
+
+<!-- Charts Row -->
+<div class="chart-grid">
+
+  <!-- Doughnut: Decision distribution -->
+  <div class="chart-box">
+    <div class="chart-title">Human Review Decisions</div>
+    <div style="max-width:260px;margin:0 auto;">
+      <canvas id="decisionChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Bar: Cases by category -->
+  <div class="chart-box">
+    <div class="chart-title">Issues by Category</div>
+    <canvas id="categoryChart" style="max-height:220px;"></canvas>
+  </div>
+
+  <!-- Bar: Severity distribution -->
+  <div class="chart-box">
+    <div class="chart-title">Cases by Severity</div>
+    <canvas id="severityChart" style="max-height:220px;"></canvas>
+  </div>
+
+  <!-- Bar: Confidence distribution -->
+  <div class="chart-box">
+    <div class="chart-title">AI Confidence Distribution</div>
+    <canvas id="confidenceChart" style="max-height:220px;"></canvas>
+  </div>
+
+</div>
+
+<!-- ── Responsible AI Log ──────────────────────────────────────────── -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-icon red">🛡️</div>
+    <div>
+      <div class="card-title">Responsible AI Log</div>
+      <div class="card-subtitle">
+        Cases where human review corrected the AI diagnosis — demonstrating the necessity of human oversight
+      </div>
+    </div>
+    <span class="badge badge-red" style="margin-left:auto;">{{ rai_log | length }} corrections</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Case</th>
+          <th>Category</th>
+          <th>AI Diagnosis</th>
+          <th>AI Confidence</th>
+          <th>Human Decision</th>
+          <th>Correct Diagnosis</th>
+          <th>Reason</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in rai_log %}
+        <tr>
+          <td>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--cyan);">
+              {% if entry.case_ref %}#{{ entry.case_ref }}{% else %}#{{ entry.diagnosis_id }}{% endif %}
+            </span>
+          </td>
+          <td>
+            <span class="badge badge-muted" style="font-size:0.72rem;">{{ entry.category or '—' }}</span>
+          </td>
+          <td style="max-width:180px;color:var(--red);">
+            <span title="{{ entry.ai_diagnosis }}">
+              {{ entry.ai_diagnosis[:55] if entry.ai_diagnosis else '—' }}{{ '…' if entry.ai_diagnosis and entry.ai_diagnosis|length > 55 }}
+            </span>
+          </td>
+          <td>
+            <span class="badge {{ 'badge-green' if entry.ai_confidence=='High' else 'badge-amber' if entry.ai_confidence=='Medium' else 'badge-red' }}">
+              {{ entry.ai_confidence or '—' }}
+            </span>
+          </td>
+          <td>
+            <span class="badge {{ 'badge-amber' if entry.human_decision=='edit' else 'badge-red' }}"
+                  style="font-size:0.8rem;padding:4px 12px;">
+              {% if entry.human_decision == 'edit' %}✏️ Edited
+              {% else %}❌ Rejected{% endif %}
+            </span>
+          </td>
+          <td style="max-width:180px;color:var(--green);font-size:0.875rem;">
+            {{ entry.human_diagnosis[:60] if entry.human_diagnosis else '—' }}
+          </td>
+          <td style="max-width:200px;font-size:0.82rem;color:var(--text-secondary);">
+            <span title="{{ entry.reason }}">{{ entry.reason[:70] if entry.reason else '—' }}{{ '…' if entry.reason and entry.reason|length > 70 }}</span>
+          </td>
+          <td style="white-space:nowrap;font-size:0.78rem;color:var(--text-muted);">
+            {{ entry.reviewed_at[:10] if entry.reviewed_at else '—' }}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" style="text-align:center;color:var(--text-muted);padding:2rem;">
+            No AI corrections recorded yet.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Insight callout -->
+<div style="margin-top:1.5rem;background:rgba(0,212,255,0.04);border:1px solid rgba(0,212,255,0.15);border-radius:var(--radius-lg);padding:1.25rem 1.5rem;font-size:0.875rem;color:var(--text-secondary);line-height:1.6;">
+  <strong style="color:var(--cyan);">📌 Agreement Rate Explained:</strong>
+  The agreement rate measures cases where the human engineer accepted the AI diagnosis without modification.
+  An agreement rate below 100% does not mean the AI is "wrong" — it reflects the importance of combining
+  AI reasoning with human domain expertise. Cases where humans edit or reject the diagnosis are captured
+  in the Responsible AI Log above.
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Shared chart defaults ──────────────────────────────────────────────────
+Chart.defaults.color = '#8892a4';
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.font.size = 12;
+
+const CYAN   = 'rgba(0,212,255,0.85)';
+const GREEN  = 'rgba(0,255,136,0.85)';
+const AMBER  = 'rgba(255,179,71,0.85)';
+const RED    = 'rgba(255,71,87,0.85)';
+const PURPLE = 'rgba(168,85,247,0.85)';
+const MUTED  = 'rgba(255,255,255,0.08)';
+
+// ── Decision doughnut ──────────────────────────────────────────────────────
+new Chart(document.getElementById('decisionChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Accepted', 'Edited', 'Rejected'],
+    datasets: [{
+      data: [{{ stats.accepted }}, {{ stats.edited }}, {{ stats.rejected }}],
+      backgroundColor: [GREEN, AMBER, RED],
+      borderColor: 'rgba(0,0,0,0)',
+      hoverOffset: 8,
+    }]
+  },
+  options: {
+    plugins: {
+      legend: { position: 'bottom', labels: { padding: 16, boxWidth: 12 } }
+    },
+    cutout: '68%',
+  }
+});
+
+// ── Category bar ───────────────────────────────────────────────────────────
+const catData = {{ stats.by_category | tojson }};
+new Chart(document.getElementById('categoryChart'), {
+  type: 'bar',
+  data: {
+    labels: catData.map(d => d.category),
+    datasets: [{
+      label: 'Reviews',
+      data: catData.map(d => d.cnt),
+      backgroundColor: CYAN,
+      borderRadius: 6,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: 'rgba(255,255,255,0.04)' } },
+      y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { stepSize: 1 } }
+    }
+  }
+});
+
+// ── Severity bar ───────────────────────────────────────────────────────────
+const sevData   = {{ stats.by_severity | tojson }};
+const sevColors = { Low: CYAN, Medium: AMBER, High: RED, Critical: 'rgba(255,0,60,0.85)' };
+new Chart(document.getElementById('severityChart'), {
+  type: 'bar',
+  data: {
+    labels: sevData.map(d => d.severity),
+    datasets: [{
+      label: 'Cases',
+      data: sevData.map(d => d.cnt),
+      backgroundColor: sevData.map(d => sevColors[d.severity] || MUTED),
+      borderRadius: 6,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: 'rgba(255,255,255,0.04)' } },
+      y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { stepSize: 1 } }
+    }
+  }
+});
+
+// ── Confidence bar ─────────────────────────────────────────────────────────
+const confData   = {{ stats.confidence | tojson }};
+const confColors = { High: GREEN, Medium: AMBER, Low: RED };
+new Chart(document.getElementById('confidenceChart'), {
+  type: 'bar',
+  data: {
+    labels: confData.map(d => d.confidence || 'Unknown'),
+    datasets: [{
+      label: 'Diagnoses',
+      data: confData.map(d => d.cnt),
+      backgroundColor: confData.map(d => confColors[d.confidence] || PURPLE),
+      borderRadius: 6,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: 'rgba(255,255,255,0.04)' } },
+      y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { stepSize: 1 } }
+    }
+  }
+});
+</script>
+{% endblock %}

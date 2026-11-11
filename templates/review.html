@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Review History{% endblock %}
+{% block meta_desc %}Complete history of all human reviews — accepted, edited, and rejected AI diagnoses.{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>🕒 Review History</h1>
+  <p>All human review decisions — the full audit trail for responsible AI.</p>
+</div>
+
+<!-- Summary pills -->
+<div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+  {% set accept_count = reviews | selectattr('decision','equalto','accept') | list | length %}
+  {% set edit_count   = reviews | selectattr('decision','equalto','edit')   | list | length %}
+  {% set reject_count = reviews | selectattr('decision','equalto','reject')  | list | length %}
+  <span class="badge badge-muted" style="font-size:0.85rem;padding:6px 14px;">
+    Total: {{ reviews | length }}
+  </span>
+  <span class="badge badge-green" style="font-size:0.85rem;padding:6px 14px;">
+    ✅ Accepted: {{ accept_count }}
+  </span>
+  <span class="badge badge-amber" style="font-size:0.85rem;padding:6px 14px;">
+    ✏️ Edited: {{ edit_count }}
+  </span>
+  <span class="badge badge-red" style="font-size:0.85rem;padding:6px 14px;">
+    ❌ Rejected: {{ reject_count }}
+  </span>
+</div>
+
+{% if reviews %}
+<div class="card">
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Category</th>
+          <th>Symptom</th>
+          <th>AI Diagnosis</th>
+          <th>Confidence</th>
+          <th>Decision</th>
+          <th>Human Correction</th>
+          <th>Verified</th>
+          <th>Date</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reviews %}
+        <tr>
+          <!-- Case ref / ID -->
+          <td>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--cyan);">
+              {% if r.case_ref %}#{{ r.case_ref }}{% else %}—{% endif %}
+            </span>
+          </td>
+
+          <!-- Category -->
+          <td>
+            <span class="badge badge-muted" style="font-size:0.72rem;">{{ r.category or '—' }}</span>
+          </td>
+
+          <!-- Symptom (truncated) -->
+          <td style="max-width:220px;">
+            <span title="{{ r.symptom }}">{{ r.symptom[:70] }}{{ '…' if r.symptom|length > 70 }}</span>
+          </td>
+
+          <!-- AI root cause -->
+          <td style="max-width:180px;color:var(--text-primary);">
+            <span title="{{ r.ai_root_cause }}">{{ r.ai_root_cause[:60] if r.ai_root_cause else '—' }}{{ '…' if r.ai_root_cause and r.ai_root_cause|length > 60 }}</span>
+          </td>
+
+          <!-- Confidence -->
+          <td>
+            <span class="badge {{ 'badge-green' if r.confidence=='High' else 'badge-amber' if r.confidence=='Medium' else 'badge-red' }}">
+              {{ r.confidence or '—' }}
+            </span>
+          </td>
+
+          <!-- Human Decision -->
+          <td>
+            <span class="badge {{ 'badge-green' if r.decision=='accept' else 'badge-amber' if r.decision=='edit' else 'badge-red' }}"
+                  style="font-size:0.8rem;padding:4px 12px;">
+              {% if r.decision == 'accept' %}✅ Accept
+              {% elif r.decision == 'edit' %}✏️ Edit
+              {% else %}❌ Reject{% endif %}
+            </span>
+          </td>
+
+          <!-- Human correction -->
+          <td style="max-width:200px;font-size:0.82rem;">
+            {% if r.human_correction %}
+              <span title="{{ r.human_correction }}" style="color:var(--amber);">
+                {{ r.human_correction[:60] }}{{ '…' if r.human_correction|length > 60 }}
+              </span>
+            {% elif r.decision == 'accept' %}
+              <span style="color:var(--text-muted);">AI was correct</span>
+            {% else %}—{% endif %}
+          </td>
+
+          <!-- Verification after fix -->
+          <td style="text-align:center;">
+            {% if r.verified_after %}
+              {{ '✅' if r.verified_after == 'pass' else '❌' }}
+            {% else %}—{% endif %}
+          </td>
+
+          <!-- Date -->
+          <td style="white-space:nowrap;font-size:0.78rem;color:var(--text-muted);">
+            {{ r.reviewed_at[:16] if r.reviewed_at else '—' }}
+          </td>
+
+          <!-- Link to diagnosis -->
+          <td>
+            <a href="{{ url_for('diagnosis_page', diag_id=r.diagnosis_id) }}"
+               class="btn btn-ghost btn-sm">View →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<!-- Empty state -->
+<div class="card" style="text-align:center;padding:4rem 2rem;">
+  <div style="font-size:3rem;margin-bottom:1rem;">📋</div>
+  <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin-bottom:0.5rem;">No reviews yet</div>
+  <div style="color:var(--text-secondary);margin-bottom:1.5rem;">
+    Run an analysis and submit a human review to see it here.
+  </div>
+  <a href="{{ url_for('index') }}" class="btn btn-primary">🔍 Start Analysis</a>
+</div>
+{% endif %}
+
+{% endblock %}

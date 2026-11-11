@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}NetSage AI{% endblock %} — Network Troubleshooting Assistant</title>
+  <meta name="description" content="{% block meta_desc %}NetSage AI: AI-assisted Cisco network troubleshooting with Python rule validation and human review.{% endblock %}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2300d4ff'/><text x='16' y='23' font-size='18' text-anchor='middle' fill='%23000'>⚡</text></svg>"/>
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<!-- Navigation -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="{{ url_for('index') }}" class="nav-logo">
+      <div class="nav-logo-icon">⚡</div>
+      <span class="nav-logo-text">Net<span>Sage</span> AI</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="{{ url_for('index') }}"    id="nav-analyze"   class="{{ 'active' if request.endpoint == 'index' }}">🔍 Analyze</a></li>
+      <li><a href="{{ url_for('cases_page') }}" id="nav-cases"   class="{{ 'active' if request.endpoint == 'cases_page' }}">📋 Cases</a></li>
+      <li><a href="{{ url_for('history') }}"  id="nav-history"   class="{{ 'active' if request.endpoint == 'history' }}">🕒 History</a></li>
+      <li><a href="{{ url_for('dashboard') }}" id="nav-dashboard" class="{{ 'active' if request.endpoint == 'dashboard' }}">📊 Dashboard</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- Main content -->
+<main class="page fade-in">
+
+  <!-- Flash messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-container">
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">
+            {% if category == 'success' %}✅{% elif category == 'error' %}❌{% else %}⚠️{% endif %}
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</main>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
